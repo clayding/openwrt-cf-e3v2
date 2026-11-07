@@ -1,4 +1,4 @@
-name: Build OpenWrt HC5661A with USB
+name: Build OpenWrt HC5661A with USB + Fibocom L716
 
 on:
   push:
@@ -21,12 +21,34 @@ jobs:
         git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
         cd openwrt && git log --oneline -1
 
-    - name: Enable USB in HC5661A DTS
+    - name: Patch HC5661A DTS for CF-E3V2 4G support
       run: |
         cd openwrt
-        sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
-        sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
-        grep -A2 "ehci\|ohci" target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
+        DTS="target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts"
+        
+        # 1. Enable EHCI and OHCI
+        sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
+        sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
+        
+        # 2. Add Fibocom L716 power regulator (GPIO-2, ACTIVE LOW = modem ON)
+        cat >> $DTS << 'DTSEOF'
+
+/ {
+	fibocom_power: fibocom-power {
+		compatible = "regulator-fixed";
+		regulator-name = "fibocom_power";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio0 2 1>;
+		regulator-always-on;
+		regulator-boot-on;
+		enable-active-low;
+	};
+};
+DTSEOF
+        
+        echo "DTS patch applied:"
+        grep -A3 "ehci\|ohci\|fibocom" $DTS | head -20
 
     - name: Update feeds
       run: |
@@ -46,7 +68,9 @@ jobs:
         echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-rndis=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
         echo "CONFIG_PACKAGE_luci=y" >> .config
@@ -64,6 +88,6 @@ jobs:
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-hc5661a-usb-4g
+        name: openwrt-hc5661a-fibocom-l716
         path: openwrt/bin/targets/ramips/mt76x8/*hc5661a*.bin
         retention-days: 7
