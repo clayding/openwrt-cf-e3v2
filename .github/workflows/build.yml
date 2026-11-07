@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    
+
     steps:
     - name: Free disk space
       run: |
@@ -26,7 +26,6 @@ jobs:
         cd openwrt
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
-        echo "DTS after modification:"
         grep -A2 "ehci\|ohci" target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
 
     - name: Update feeds
@@ -38,24 +37,22 @@ jobs:
     - name: Configure build
       run: |
         cd openwrt
-        cat > .config << 'CONFIG'
-CONFIG_TARGET_ramips=y
-CONFIG_TARGET_ramips_mt76x8=y
-CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y
-CONFIG_PACKAGE_kmod-usb-dwc2=y
-CONFIG_PACKAGE_kmod-usb2=y
-CONFIG_PACKAGE_kmod-usb-core=y
-CONFIG_PACKAGE_kmod-usb-serial=y
-CONFIG_PACKAGE_kmod-usb-serial-option=y
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-proto-3g=y
-CONFIG_PACKAGE_luci-proto-qmi=y
-CONFIG_PACKAGE_umbim=y
-CONFIG
+        echo "CONFIG_TARGET_ramips=y" >> .config
+        echo "CONFIG_TARGET_ramips_mt76x8=y" >> .config
+        echo "CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-dwc2=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb2=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-core=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_PACKAGE_luci-proto-3g=y" >> .config
+        echo "CONFIG_PACKAGE_luci-proto-qmi=y" >> .config
+        echo "CONFIG_PACKAGE_umbim=y" >> .config
         make defconfig
 
     - name: Build firmware
