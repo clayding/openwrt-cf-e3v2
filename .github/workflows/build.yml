@@ -1,7 +1,9 @@
 name: Build OpenWrt HC5661A with USB
 
 on:
-  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,17 +19,14 @@ jobs:
     - name: Checkout OpenWrt 23.05
       run: |
         git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
-        cd openwrt
-        git log --oneline -1
+        cd openwrt && git log --oneline -1
 
     - name: Enable USB in HC5661A DTS
       run: |
         cd openwrt
-        # Change disabled to okay for EHCI and OHCI in HC5661A DTS
-        sed -i 's/&ehci {$/ &ehci {/' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
-        echo "Modified DTS:"
+        echo "DTS after modification:"
         grep -A2 "ehci\|ohci" target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
 
     - name: Update feeds
@@ -55,16 +54,14 @@ CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-proto-3g=y
 CONFIG_PACKAGE_luci-proto-qmi=y
-CONFIG_PACKAGE_modemmanager=y
 CONFIG_PACKAGE_umbim=y
-CONFIG_CONFIG
+CONFIG
         make defconfig
 
     - name: Build firmware
       run: |
         cd openwrt
-        make -j$(nproc) V=s 2>&1 | tail -50
-        echo "Build done"
+        make -j$(nproc) V=s 2>&1 | tail -20
         ls -lh bin/targets/ramips/mt76x8/
 
     - name: Upload firmware
