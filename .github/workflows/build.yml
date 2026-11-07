@@ -1,0 +1,75 @@
+name: Build OpenWrt HC5661A with USB
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h
+
+    - name: Checkout OpenWrt 23.05
+      run: |
+        git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
+        cd openwrt
+        git log --oneline -1
+
+    - name: Enable USB in HC5661A DTS
+      run: |
+        cd openwrt
+        # Change disabled to okay for EHCI and OHCI in HC5661A DTS
+        sed -i 's/&ehci {$/ &ehci {/' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
+        sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
+        sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
+        echo "Modified DTS:"
+        grep -A2 "ehci\|ohci" target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts
+
+    - name: Update feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Configure build
+      run: |
+        cd openwrt
+        cat > .config << 'CONFIG'
+CONFIG_TARGET_ramips=y
+CONFIG_TARGET_ramips_mt76x8=y
+CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y
+CONFIG_PACKAGE_kmod-usb-dwc2=y
+CONFIG_PACKAGE_kmod-usb2=y
+CONFIG_PACKAGE_kmod-usb-core=y
+CONFIG_PACKAGE_kmod-usb-serial=y
+CONFIG_PACKAGE_kmod-usb-serial-option=y
+CONFIG_PACKAGE_kmod-usb-net=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-proto-3g=y
+CONFIG_PACKAGE_luci-proto-qmi=y
+CONFIG_PACKAGE_modemmanager=y
+CONFIG_PACKAGE_umbim=y
+CONFIG_CONFIG
+        make defconfig
+
+    - name: Build firmware
+      run: |
+        cd openwrt
+        make -j$(nproc) V=s 2>&1 | tail -50
+        echo "Build done"
+        ls -lh bin/targets/ramips/mt76x8/
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: openwrt-hc5661a-usb-4g
+        path: openwrt/bin/targets/ramips/mt76x8/*hc5661a*.bin
+        retention-days: 7
