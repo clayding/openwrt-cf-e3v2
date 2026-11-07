@@ -25,11 +25,21 @@ jobs:
       run: |
         cd openwrt
         DTS="target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts"
+        
+        # 1. Enable EHCI and OHCI
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
-        printf '\n/ {\n\tfibocom_power: fibocom-power {\n\t\tcompatible = "regulator-fixed";\n\t\tregulator-name = "fibocom_power";\n\t\tgpio = <&gpio0 2 1>;\n\t\tregulator-always-on;\n\t\tregulator-boot-on;\n\t\tenable-active-low;\n\t};\n};\n' >> $DTS
-        echo "DTS patched OK"
-        grep -c "ehci\|ohci\|fibocom" $DTS
+        
+        # 2. Release GPIO-2 pinmux group for Fibocom power control
+        # Add uart1 group to gpio function so GPIO-2/3 become available
+        sed -i '/groups = "i2c"/s/"i2c"/"uart1", "i2c"/' $DTS
+        
+        # 3. Add Fibocom L716 power regulator using GPIO-2 (ACTIVE LOW)
+        # Using correct &gpio reference for MT7628AN
+        printf '\n&gpio {\n};\n\n/ {\n\tfibocom_power: fibocom-power {\n\t\tcompatible = "regulator-fixed";\n\t\tregulator-name = "fibocom_power";\n\t\tgpio = <&gpio 2 1>;\n\t\tregulator-always-on;\n\t\tregulator-boot-on;\n\t\tenable-active-low;\n\t};\n};\n' >> $DTS
+        
+        echo "DTS patch done"
+        grep -A3 "ehci\|ohci\|fibocom\|uart1" $DTS | head -20
 
     - name: Update feeds
       run: |
@@ -58,6 +68,7 @@ jobs:
         echo "CONFIG_PACKAGE_luci-proto-3g=y" >> .config
         echo "CONFIG_PACKAGE_luci-proto-qmi=y" >> .config
         echo "CONFIG_PACKAGE_umbim=y" >> .config
+        echo "CONFIG_PACKAGE_devmem2=y" >> .config
         make defconfig
 
     - name: Build firmware
@@ -69,6 +80,6 @@ jobs:
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-hc5661a-fibocom-l716
+        name: openwrt-hc5661a-fibocom-l716-v2
         path: openwrt/bin/targets/ramips/mt76x8/*hc5661a*.bin
         retention-days: 7
