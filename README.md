@@ -1,1 +1,1 @@
-# OpenWrt for COMFAST CF-EV2
+# OpenWrt for COMFAST CF-E3 V2
