@@ -25,30 +25,11 @@ jobs:
       run: |
         cd openwrt
         DTS="target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts"
-        
-        # 1. Enable EHCI and OHCI
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
-        
-        # 2. Add Fibocom L716 power regulator (GPIO-2, ACTIVE LOW = modem ON)
-        cat >> $DTS << 'DTSEOF'
-
-/ {
-	fibocom_power: fibocom-power {
-		compatible = "regulator-fixed";
-		regulator-name = "fibocom_power";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		gpio = <&gpio0 2 1>;
-		regulator-always-on;
-		regulator-boot-on;
-		enable-active-low;
-	};
-};
-DTSEOF
-        
-        echo "DTS patch applied:"
-        grep -A3 "ehci\|ohci\|fibocom" $DTS | head -20
+        printf '\n/ {\n\tfibocom_power: fibocom-power {\n\t\tcompatible = "regulator-fixed";\n\t\tregulator-name = "fibocom_power";\n\t\tgpio = <&gpio0 2 1>;\n\t\tregulator-always-on;\n\t\tregulator-boot-on;\n\t\tenable-active-low;\n\t};\n};\n' >> $DTS
+        echo "DTS patched OK"
+        grep -c "ehci\|ohci\|fibocom" $DTS
 
     - name: Update feeds
       run: |
@@ -65,14 +46,14 @@ DTSEOF
         echo "CONFIG_PACKAGE_kmod-usb-dwc2=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb2=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-core=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-rndis=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
         echo "CONFIG_PACKAGE_luci=y" >> .config
         echo "CONFIG_PACKAGE_luci-proto-3g=y" >> .config
         echo "CONFIG_PACKAGE_luci-proto-qmi=y" >> .config
