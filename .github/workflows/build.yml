@@ -13,33 +13,28 @@ jobs:
     - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        df -h
 
     - name: Checkout OpenWrt 23.05
       run: |
         git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
-        cd openwrt && git log --oneline -1
 
-    - name: Patch HC5661A DTS (EHCI/OHCI + GPIO-2 Fibocom power)
+    - name: Patch HC5661A DTS
       run: |
         cd openwrt
         DTS="target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts"
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
         printf '\n&gpio {\n};\n\n/ {\n\tfibocom_power: fibocom-power {\n\t\tcompatible = "regulator-fixed";\n\t\tregulator-name = "fibocom_power";\n\t\tgpio = <&gpio 2 1>;\n\t\tregulator-always-on;\n\t\tregulator-boot-on;\n\t\tenable-active-low;\n\t};\n};\n' >> $DTS
-        grep -c "fibocom\|okay" $DTS
 
-    - name: Add luci-app-3ginfo-lite package + L716 semicolon patch
+    - name: Add 3ginfo-lite + L716 patch
       run: |
         cd openwrt
         git clone --depth 1 https://github.com/4IceG/luci-app-3ginfo-lite.git /tmp/3gl
         cp -r /tmp/3gl/luci-app-3ginfo-lite package/luci-app-3ginfo-lite
-        # Patch: L716 does not support ; concatenated AT commands
         SH="package/luci-app-3ginfo-lite/root/usr/share/3ginfo-lite/3ginfo.sh"
-        awk '/O=$\(sms_tool -D -d $DEVICE at "AT\+CSQ;/ { print "\tO=$(for c in \"AT+CSQ\" \"AT+COPS=3,0\" \"AT+COPS?\" \"AT+COPS=3,2\" \"AT+COPS?\" \"AT+CREG=2\" \"AT+CREG?\" \"AT+CEREG=2\" \"AT+CEREG?\" \"AT+CPIN?\"; do sms_tool -d $DEVICE at \"$c\" 2>/dev/null; done)"; next } { print }' $SH > $SH.new && mv $SH.new $SH
-        grep -c 'for c in' $SH
+        awk '/O=$\(sms_tool -D -d $DEVICE at "AT\+CSQ;/ { print "\tO=$(for c in \"AT+CSQ\" \"AT+COPS=3,0\" \"AT+COPS?\" \"AT+COPS=3,2\" \"AT+COPS?\" \"AT+CREG=2\" \"AT+CREG?\" \"AT+CEREG=2\" \"AT+CEREG?\" \"AT+CPIN?\"; do sms_tool -d $DEVICE at \"\$c\" 2>/dev/null; done)"; next } { print }' $SH > $SH.new && mv $SH.new $SH
 
-    - name: Embed Fibocom keepalive daemon + boot config
+    - name: Embed daemon + boot config
       run: |
         cd openwrt
         mkdir -p files/usr/bin files/etc/init.d files/etc/uci-defaults
@@ -47,7 +42,6 @@ jobs:
         echo 'IyEvYmluL3NoIC9ldGMvcmMuY29tbW9uClNUQVJUPTkwClNUT1A9MTAKVVNFX1BST0NEPTEKc3RhcnRfc2VydmljZSgpIHsKICAgIHByb2NkX29wZW5faW5zdGFuY2UKICAgIHByb2NkX3NldF9wYXJhbSBjb21tYW5kIC91c3IvYmluL2ZpYm9jb21fZGFlbW9uLnNoCiAgICBwcm9jZF9zZXRfcGFyYW0gcmVzcGF3bgogICAgcHJvY2RfY2xvc2VfaW5zdGFuY2UKfQo=' | base64 -d > files/etc/init.d/fibocom_keepalive
         echo 'IyEvYmluL3NoCiMgd3dhbiAoNEcpIGludGVyZmFjZQp1Y2kgLXEgc2V0IG5ldHdvcmsud3dhbj1pbnRlcmZhY2UKdWNpIC1xIHNldCBuZXR3b3JrLnd3YW4ucHJvdG89J2RoY3AnCnVjaSAtcSBzZXQgbmV0d29yay53d2FuLmRldmljZT0nZXRoMScKdWNpIC1xIGNvbW1pdCBuZXR3b3JrCiMgQWRkIHd3YW4gdG8gd2FuIGZpcmV3YWxsIHpvbmUgZm9yIE5BVApmb3IgeiBpbiAkKHVjaSBzaG93IGZpcmV3YWxsIHwgZ3JlcCAiPXpvbmUiIHwgY3V0IC1kLiAtZjIgfCBjdXQgLWQ9IC1mMSk7IGRvCiAgICBpZiBbICIkKHVjaSAtcSBnZXQgZmlyZXdhbGwuJHoubmFtZSkiID0gIndhbiIgXTsgdGhlbgogICAgICAgIHVjaSAtcSBhZGRfbGlzdCBmaXJld2FsbC4kei5uZXR3b3JrPSd3d2FuJwogICAgZmkKZG9uZQp1Y2kgLXEgY29tbWl0IGZpcmV3YWxsCiMgM2dpbmZvLWxpdGUgQVQgcG9ydAp1Y2kgLXEgc2V0IDNnaW5mby5AM2dpbmZvWzBdLmRldmljZT0nL2Rldi90dHlVU0IyJyAyPi9kZXYvbnVsbAp1Y2kgLXEgY29tbWl0IDNnaW5mbwojIEVuYWJsZSBrZWVwYWxpdmUgZGFlbW9uCi9ldGMvaW5pdC5kL2ZpYm9jb21fa2VlcGFsaXZlIGVuYWJsZQpleGl0IDAK' | base64 -d > files/etc/uci-defaults/99_cfe3v2_setup
         chmod +x files/usr/bin/fibocom_daemon.sh files/etc/init.d/fibocom_keepalive files/etc/uci-defaults/99_cfe3v2_setup
-        ls -lR files/
 
     - name: Update feeds
       run: |
@@ -55,42 +49,40 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Configure build
+    - name: Configure
       run: |
         cd openwrt
-        cat >> .config << 'CFG'
-CONFIG_TARGET_ramips=y
-CONFIG_TARGET_ramips_mt76x8=y
-CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y
-CONFIG_PACKAGE_kmod-usb-dwc2=y
-CONFIG_PACKAGE_kmod-usb2=y
-CONFIG_PACKAGE_kmod-usb-core=y
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-rndis=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-CONFIG_PACKAGE_kmod-usb-serial=y
-CONFIG_PACKAGE_kmod-usb-serial-option=y
-CONFIG_PACKAGE_sms-tool=y
-CONFIG_PACKAGE_comgt=y
-CONFIG_PACKAGE_uqmi=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-proto-3g=y
-CONFIG_PACKAGE_luci-proto-qmi=y
-CONFIG_PACKAGE_luci-app-3ginfo-lite=y
-CONFIG_PACKAGE_umbim=y
-CFG
+        echo "CONFIG_TARGET_ramips=y" >> .config
+        echo "CONFIG_TARGET_ramips_mt76x8=y" >> .config
+        echo "CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-dwc2=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb2=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-core=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-rndis=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
+        echo "CONFIG_PACKAGE_sms-tool=y" >> .config
+        echo "CONFIG_PACKAGE_comgt=y" >> .config
+        echo "CONFIG_PACKAGE_uqmi=y" >> .config
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_PACKAGE_luci-proto-3g=y" >> .config
+        echo "CONFIG_PACKAGE_luci-proto-qmi=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-3ginfo-lite=y" >> .config
+        echo "CONFIG_PACKAGE_umbim=y" >> .config
         make defconfig
 
-    - name: Build firmware
+    - name: Build
       run: |
         cd openwrt
         make -j$(nproc) V=s 2>&1 | tail -25
         ls -lh bin/targets/ramips/mt76x8/
 
-    - name: Upload firmware
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: openwrt-cf-e3v2-full
