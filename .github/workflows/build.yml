@@ -1,4 +1,4 @@
-name: Build OpenWrt HC5661A with USB + Fibocom L716
+name: Build OpenWrt CF-E3V2 Full (USB + Fibocom L716 4G + 3ginfo)
 
 on:
   push:
@@ -9,7 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-
     steps:
     - name: Free disk space
       run: |
@@ -21,25 +20,34 @@ jobs:
         git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git
         cd openwrt && git log --oneline -1
 
-    - name: Patch HC5661A DTS for CF-E3V2 4G support
+    - name: Patch HC5661A DTS (EHCI/OHCI + GPIO-2 Fibocom power)
       run: |
         cd openwrt
         DTS="target/linux/ramips/dts/mt7628an_hiwifi_hc5661a.dts"
-        
-        # 1. Enable EHCI and OHCI
         sed -i '/&ehci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
         sed -i '/&ohci {/{n;s/status = "disabled"/status = "okay"/}' $DTS
-        
-        # 2. Release GPIO-2 pinmux group for Fibocom power control
-        # Add uart1 group to gpio function so GPIO-2/3 become available
-        sed -i '/groups = "i2c"/s/"i2c"/"uart1", "i2c"/' $DTS
-        
-        # 3. Add Fibocom L716 power regulator using GPIO-2 (ACTIVE LOW)
-        # Using correct &gpio reference for MT7628AN
         printf '\n&gpio {\n};\n\n/ {\n\tfibocom_power: fibocom-power {\n\t\tcompatible = "regulator-fixed";\n\t\tregulator-name = "fibocom_power";\n\t\tgpio = <&gpio 2 1>;\n\t\tregulator-always-on;\n\t\tregulator-boot-on;\n\t\tenable-active-low;\n\t};\n};\n' >> $DTS
-        
-        echo "DTS patch done"
-        grep -A3 "ehci\|ohci\|fibocom\|uart1" $DTS | head -20
+        grep -c "fibocom\|okay" $DTS
+
+    - name: Add luci-app-3ginfo-lite package + L716 semicolon patch
+      run: |
+        cd openwrt
+        git clone --depth 1 https://github.com/4IceG/luci-app-3ginfo-lite.git /tmp/3gl
+        cp -r /tmp/3gl/luci-app-3ginfo-lite package/luci-app-3ginfo-lite
+        # Patch: L716 does not support ; concatenated AT commands
+        SH="package/luci-app-3ginfo-lite/root/usr/share/3ginfo-lite/3ginfo.sh"
+        awk '/O=$\(sms_tool -D -d $DEVICE at "AT\+CSQ;/ { print "\tO=$(for c in \"AT+CSQ\" \"AT+COPS=3,0\" \"AT+COPS?\" \"AT+COPS=3,2\" \"AT+COPS?\" \"AT+CREG=2\" \"AT+CREG?\" \"AT+CEREG=2\" \"AT+CEREG?\" \"AT+CPIN?\"; do sms_tool -d $DEVICE at \"$c\" 2>/dev/null; done)"; next } { print }' $SH > $SH.new && mv $SH.new $SH
+        grep -c 'for c in' $SH
+
+    - name: Embed Fibocom keepalive daemon + boot config
+      run: |
+        cd openwrt
+        mkdir -p files/usr/bin files/etc/init.d files/etc/uci-defaults
+        echo 'IyEvYmluL3NoCiMgRmlib2NvbSBMNzE2OiBwb3dlciB2aWEgR1BJTy0yLCBrZWVwYWxpdmUgb24gdHR5VVNCMywgYXV0by1kaWFsIDRHCktBUE9SVD0vZGV2L3R0eVVTQjMKWyAtZCAvc3lzL2NsYXNzL2dwaW8vZ3BpbzQ4MiBdIHx8IGVjaG8gNDgyID4gL3N5cy9jbGFzcy9ncGlvL2V4cG9ydCAyPi9kZXYvbnVsbAplY2hvIG91dCA+IC9zeXMvY2xhc3MvZ3Bpby9ncGlvNDgyL2RpcmVjdGlvbiAyPi9kZXYvbnVsbAplY2hvIDAgPiAvc3lzL2NsYXNzL2dwaW8vZ3BpbzQ4Mi92YWx1ZSAyPi9kZXYvbnVsbAp3aGlsZSB0cnVlOyBkbwogICAgaWYgWyAtZSAiJEtBUE9SVCIgXTsgdGhlbgogICAgICAgIHByaW50ZiAnQVRccicgPiAiJEtBUE9SVCIgMj4vZGV2L251bGwKICAgICAgICBpZiAhIGlmY29uZmlnIGV0aDEgMj4vZGV2L251bGwgfCBncmVwIC1xICdpbmV0IGFkZHInOyB0aGVuCiAgICAgICAgICAgIHByaW50ZiAnQVQrR1RSTkRJUz0xLDFccicgPiAiJEtBUE9SVCIgMj4vZGV2L251bGwKICAgICAgICAgICAgc2xlZXAgNAogICAgICAgICAgICB1ZGhjcGMgLWkgZXRoMSAtbiAtcSA+L2Rldi9udWxsIDI+JjEKICAgICAgICBmaQogICAgZWxzZQogICAgICAgIGVjaG8gMSA+IC9zeXMvY2xhc3MvZ3Bpby9ncGlvNDgyL3ZhbHVlIDI+L2Rldi9udWxsCiAgICAgICAgc2xlZXAgMwogICAgICAgIGVjaG8gMCA+IC9zeXMvY2xhc3MvZ3Bpby9ncGlvNDgyL3ZhbHVlIDI+L2Rldi9udWxsCiAgICAgICAgc2xlZXAgOAogICAgZmkKICAgIHNsZWVwIDIKZG9uZQo=' | base64 -d > files/usr/bin/fibocom_daemon.sh
+        echo 'IyEvYmluL3NoIC9ldGMvcmMuY29tbW9uClNUQVJUPTkwClNUT1A9MTAKVVNFX1BST0NEPTEKc3RhcnRfc2VydmljZSgpIHsKICAgIHByb2NkX29wZW5faW5zdGFuY2UKICAgIHByb2NkX3NldF9wYXJhbSBjb21tYW5kIC91c3IvYmluL2ZpYm9jb21fZGFlbW9uLnNoCiAgICBwcm9jZF9zZXRfcGFyYW0gcmVzcGF3bgogICAgcHJvY2RfY2xvc2VfaW5zdGFuY2UKfQo=' | base64 -d > files/etc/init.d/fibocom_keepalive
+        echo 'IyEvYmluL3NoCiMgd3dhbiAoNEcpIGludGVyZmFjZQp1Y2kgLXEgc2V0IG5ldHdvcmsud3dhbj1pbnRlcmZhY2UKdWNpIC1xIHNldCBuZXR3b3JrLnd3YW4ucHJvdG89J2RoY3AnCnVjaSAtcSBzZXQgbmV0d29yay53d2FuLmRldmljZT0nZXRoMScKdWNpIC1xIGNvbW1pdCBuZXR3b3JrCiMgQWRkIHd3YW4gdG8gd2FuIGZpcmV3YWxsIHpvbmUgZm9yIE5BVApmb3IgeiBpbiAkKHVjaSBzaG93IGZpcmV3YWxsIHwgZ3JlcCAiPXpvbmUiIHwgY3V0IC1kLiAtZjIgfCBjdXQgLWQ9IC1mMSk7IGRvCiAgICBpZiBbICIkKHVjaSAtcSBnZXQgZmlyZXdhbGwuJHoubmFtZSkiID0gIndhbiIgXTsgdGhlbgogICAgICAgIHVjaSAtcSBhZGRfbGlzdCBmaXJld2FsbC4kei5uZXR3b3JrPSd3d2FuJwogICAgZmkKZG9uZQp1Y2kgLXEgY29tbWl0IGZpcmV3YWxsCiMgM2dpbmZvLWxpdGUgQVQgcG9ydAp1Y2kgLXEgc2V0IDNnaW5mby5AM2dpbmZvWzBdLmRldmljZT0nL2Rldi90dHlVU0IyJyAyPi9kZXYvbnVsbAp1Y2kgLXEgY29tbWl0IDNnaW5mbwojIEVuYWJsZSBrZWVwYWxpdmUgZGFlbW9uCi9ldGMvaW5pdC5kL2ZpYm9jb21fa2VlcGFsaXZlIGVuYWJsZQpleGl0IDAK' | base64 -d > files/etc/uci-defaults/99_cfe3v2_setup
+        chmod +x files/usr/bin/fibocom_daemon.sh files/etc/init.d/fibocom_keepalive files/etc/uci-defaults/99_cfe3v2_setup
+        ls -lR files/
 
     - name: Update feeds
       run: |
@@ -50,36 +58,41 @@ jobs:
     - name: Configure build
       run: |
         cd openwrt
-        echo "CONFIG_TARGET_ramips=y" >> .config
-        echo "CONFIG_TARGET_ramips_mt76x8=y" >> .config
-        echo "CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-dwc2=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb2=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-core=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net-rndis=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-serial=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
-        echo "CONFIG_PACKAGE_luci=y" >> .config
-        echo "CONFIG_PACKAGE_luci-proto-3g=y" >> .config
-        echo "CONFIG_PACKAGE_luci-proto-qmi=y" >> .config
-        echo "CONFIG_PACKAGE_umbim=y" >> .config
-        echo "CONFIG_PACKAGE_devmem2=y" >> .config
+        cat >> .config << 'CFG'
+CONFIG_TARGET_ramips=y
+CONFIG_TARGET_ramips_mt76x8=y
+CONFIG_TARGET_ramips_mt76x8_DEVICE_hiwifi_hc5661a=y
+CONFIG_PACKAGE_kmod-usb-dwc2=y
+CONFIG_PACKAGE_kmod-usb2=y
+CONFIG_PACKAGE_kmod-usb-core=y
+CONFIG_PACKAGE_kmod-usb-net=y
+CONFIG_PACKAGE_kmod-usb-net-rndis=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+CONFIG_PACKAGE_kmod-usb-serial=y
+CONFIG_PACKAGE_kmod-usb-serial-option=y
+CONFIG_PACKAGE_sms-tool=y
+CONFIG_PACKAGE_comgt=y
+CONFIG_PACKAGE_uqmi=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-proto-3g=y
+CONFIG_PACKAGE_luci-proto-qmi=y
+CONFIG_PACKAGE_luci-app-3ginfo-lite=y
+CONFIG_PACKAGE_umbim=y
+CFG
         make defconfig
 
     - name: Build firmware
       run: |
         cd openwrt
-        make -j$(nproc) V=s 2>&1 | tail -20
+        make -j$(nproc) V=s 2>&1 | tail -25
         ls -lh bin/targets/ramips/mt76x8/
 
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-hc5661a-fibocom-l716-v2
+        name: openwrt-cf-e3v2-full
         path: openwrt/bin/targets/ramips/mt76x8/*hc5661a*.bin
-        retention-days: 7
+        retention-days: 30
